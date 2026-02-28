@@ -1,58 +1,48 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>360 Panorama Viewer</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #000;
-      font-family: sans-serif;
-    }
+<meta charset="UTF-8">
+<title>360 Viewer</title>
 
-    #upload {
-      position: absolute;
-      z-index: 10;
-      top: 20px;
-      left: 20px;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-    }
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: black;
+  font-family: sans-serif;
+}
 
-  #fullscreenBtn {
-    position: absolute;
-    z-index: 10;
-    top: 60px;
-    left: 20px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    border: none;
-    background: white;
-    cursor: pointer;
-  }
-  </style>
+button {
+  position: absolute;
+  left: 20px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: none;
+  background: white;
+  cursor: pointer;
+  z-index: 10;
+}
+
+#fullscreenBtn { top: 20px; }
+#gyroBtn { top: 70px; }
+</style>
 </head>
+
 <body>
 
-<div id="upload">
-  <input type="file" id="fileInput" accept="image/png, image/jpeg" />
-</div>
-
 <button id="fullscreenBtn">Fullscreen</button>
+<button id="gyroBtn">Enable Gyro</button>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
 <script>
-let scene, camera, renderer, sphere;
-let isUserInteracting = false;
 
+let scene, camera, renderer;
 let lon = 0, lat = 0;
+let isUserInteracting = false;
 let onPointerDownLon = 0, onPointerDownLat = 0;
 let onPointerDownPointerX = 0, onPointerDownPointerY = 0;
 
-// NIEUW ↓
 let deviceOrientationEnabled = false;
 let alpha = 0, beta = 0, gamma = 0;
 
@@ -60,6 +50,7 @@ init();
 animate();
 
 function init() {
+
   scene = new THREE.Scene();
 
   camera = new THREE.PerspectiveCamera(
@@ -71,39 +62,48 @@ function init() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;  
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   document.body.appendChild(renderer.domElement);
 
   const geometry = new THREE.SphereGeometry(500, 60, 40);
-  geometry.scale(-1, 1, 1); // inside of sphere
+  geometry.scale(-1, 1, 1);
 
-const texture = new THREE.TextureLoader().load("panorama.jpg");
-texture.colorSpace = THREE.SRGBColorSpace;
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    "panorama.jpg",
+    function(texture) {
 
-const material = new THREE.MeshBasicMaterial({
-  map: texture
-});
+      texture.colorSpace = THREE.SRGBColorSpace;
 
-  sphere = new THREE.Mesh(geometry, material);
-  scene.add(sphere);
+      const material = new THREE.MeshBasicMaterial({
+        map: texture
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      scene.add(mesh);
+
+    },
+    undefined,
+    function(error) {
+      console.error("Texture failed to load:", error);
+    }
+  );
 
   document.addEventListener("pointerdown", onPointerDown);
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", () => isUserInteracting = false);
-  document.addEventListener("wheel", onDocumentMouseWheel);
-  renderer.domElement.addEventListener("dblclick", toggleFullscreen);
+
+  document.addEventListener("wheel", onMouseWheel);
 
   window.addEventListener("resize", onWindowResize);
 
-// Gyroscope listener
   window.addEventListener("deviceorientation", function(event) {
-  if (!deviceOrientationEnabled) return;
+    if (!deviceOrientationEnabled) return;
 
-  alpha = event.alpha;
-  beta = event.beta;
-  gamma = event.gamma;
-});
-
+    alpha = event.alpha;
+    beta = event.beta;
+    gamma = event.gamma;
+  });
 
 }
 
@@ -120,6 +120,12 @@ function onPointerMove(event) {
     lon = (onPointerDownPointerX - event.clientX) * 0.1 + onPointerDownLon;
     lat = (event.clientY - onPointerDownPointerY) * 0.1 + onPointerDownLat;
   }
+}
+
+function onMouseWheel(event) {
+  camera.fov += event.deltaY * 0.05;
+  camera.fov = Math.max(30, Math.min(100, camera.fov));
+  camera.updateProjectionMatrix();
 }
 
 function onWindowResize() {
@@ -152,64 +158,28 @@ function update() {
     const phi = THREE.MathUtils.degToRad(90 - lat);
     const theta = THREE.MathUtils.degToRad(lon);
 
-    camera.target = new THREE.Vector3();
-    camera.target.x = 500 * Math.sin(phi) * Math.cos(theta);
-    camera.target.y = 500 * Math.cos(phi);
-    camera.target.z = 500 * Math.sin(phi) * Math.sin(theta);
+    const x = 500 * Math.sin(phi) * Math.cos(theta);
+    const y = 500 * Math.cos(phi);
+    const z = 500 * Math.sin(phi) * Math.sin(theta);
 
-    camera.lookAt(camera.target);
+    camera.lookAt(x, y, z);
   }
 
   renderer.render(scene, camera);
 }
 
-function onDocumentMouseWheel(event) {
-  camera.fov += event.deltaY * 0.05;
-  camera.fov = Math.max(30, Math.min(100, camera.fov));
-  camera.updateProjectionMatrix();
-}
+document.getElementById("fullscreenBtn").addEventListener("click", function() {
 
-// Upload logic
-document.getElementById("fileInput").addEventListener("change", function (event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const texture = new THREE.TextureLoader().load(e.target.result);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    sphere.material.map = texture;
-    sphere.material.needsUpdate = true;
-  };
-  reader.readAsDataURL(file);
-});
-
-function toggleFullscreen() {
   const elem = document.documentElement;
 
   if (!document.fullscreenElement) {
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen();
-    } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen();
-    } else if (elem.msRequestFullscreen) {
-      elem.msRequestFullscreen();
-    }
+    elem.requestFullscreen?.();
   } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
+    document.exitFullscreen?.();
   }
-}
 
-// button koppelen
-document.getElementById("fullscreenBtn").addEventListener("click", toggleFullscreen);
+});
 
-// button iphone permission gyro
 document.getElementById("gyroBtn").addEventListener("click", function() {
 
   if (typeof DeviceOrientationEvent.requestPermission === "function") {
@@ -218,7 +188,6 @@ document.getElementById("gyroBtn").addEventListener("click", function() {
       .then(permissionState => {
         if (permissionState === "granted") {
           deviceOrientationEnabled = true;
-          alert("Gyroscope enabled!");
         }
       })
       .catch(console.error);
@@ -226,22 +195,10 @@ document.getElementById("gyroBtn").addEventListener("click", function() {
   } else {
     deviceOrientationEnabled = true;
   }
+
 });
 
 </script>
 
-<button id="gyroBtn" style="
-position:absolute;
-top:100px;
-left:20px;
-z-index:20;
-padding:10px;
-border-radius:8px;
-border:none;
-background:white;">
-Enable Gyro
-</button>
-
 </body>
 </html>
-
